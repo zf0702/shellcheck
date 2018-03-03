@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.Formatter.Format where
 
@@ -25,11 +25,12 @@ import ShellCheck.Interface
 -- A formatter that carries along an arbitrary piece of data
 data Formatter = Formatter {
     header ::  IO (),
-    onResult :: CheckResult -> String -> IO (),
+    onResult :: CheckResult -> SystemInterface IO -> IO (),
     onFailure :: FilePath -> ErrorMessage -> IO (),
     footer :: IO ()
 }
 
+sourceFile (PositionedComment pos _ _) = posFile pos
 lineNo (PositionedComment pos _ _) = posLine pos
 endLineNo (PositionedComment _ end _) = posLine end
 colNo  (PositionedComment pos _ _) = posColumn pos

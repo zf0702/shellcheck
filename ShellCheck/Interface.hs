@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.Interface where
 
@@ -24,7 +24,7 @@ import Control.Monad.Identity
 import qualified Data.Map as Map
 
 
-data SystemInterface m = SystemInterface {
+newtype SystemInterface m = SystemInterface {
     -- Read a file by filename, or return an error
     siReadFile :: String -> m (Either ErrorMessage String)
 }
@@ -33,6 +33,7 @@ data SystemInterface m = SystemInterface {
 data CheckSpec = CheckSpec {
     csFilename :: String,
     csScript :: String,
+    csCheckSourced :: Bool,
     csExcludedWarnings :: [Integer],
     csShellTypeOverride :: Maybe Shell
 } deriving (Show, Eq)
@@ -42,9 +43,11 @@ data CheckResult = CheckResult {
     crComments :: [PositionedComment]
 } deriving (Show, Eq)
 
+emptyCheckSpec :: CheckSpec
 emptyCheckSpec = CheckSpec {
     csFilename = "",
     csScript = "",
+    csCheckSourced = False,
     csExcludedWarnings = [],
     csShellTypeOverride = Nothing
 }
@@ -52,7 +55,8 @@ emptyCheckSpec = CheckSpec {
 -- Parser input and output
 data ParseSpec = ParseSpec {
     psFilename :: String,
-    psScript :: String
+    psScript :: String,
+    psCheckSourced :: Bool
 } deriving (Show, Eq)
 
 data ParseResult = ParseResult {
@@ -65,16 +69,17 @@ data ParseResult = ParseResult {
 data AnalysisSpec = AnalysisSpec {
     asScript :: Token,
     asShellType :: Maybe Shell,
-    asExecutionMode :: ExecutionMode
+    asExecutionMode :: ExecutionMode,
+    asCheckSourced :: Bool
 }
 
-data AnalysisResult = AnalysisResult {
+newtype AnalysisResult = AnalysisResult {
     arComments :: [TokenComment]
 }
 
 
 -- Formatter options
-data FormatterOptions = FormatterOptions {
+newtype FormatterOptions = FormatterOptions {
     foColorOption :: ColorOption
 }
 

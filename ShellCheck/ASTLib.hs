@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.ASTLib where
 
@@ -23,6 +23,7 @@ import ShellCheck.AST
 
 import Control.Monad.Writer
 import Control.Monad
+import Data.Functor
 import Data.List
 import Data.Maybe
 
@@ -47,8 +48,8 @@ willSplit x =
     T_NormalWord _ l -> any willSplit l
     _ -> False
 
-isGlob (T_Extglob {}) = True
-isGlob (T_Glob {}) = True
+isGlob T_Extglob {} = True
+isGlob T_Glob {} = True
 isGlob (T_NormalWord _ l) = any isGlob l
 isGlob _ = False
 
@@ -86,13 +87,14 @@ oversimplify token =
         (T_Glob _ s) -> [s]
         (T_Pipeline _ _ [x]) -> oversimplify x
         (T_Literal _ x) -> [x]
+        (T_ParamSubSpecialChar _ x) -> [x]
         (T_SimpleCommand _ vars words) -> concatMap oversimplify words
         (T_Redirecting _ _ foo) -> oversimplify foo
         (T_DollarSingleQuoted _ s) -> [s]
         (T_Annotation _ _ s) -> oversimplify s
         -- Workaround for let "foo = bar" parsing
         (TA_Sequence _ [TA_Expansion _ v]) -> concatMap oversimplify v
-        otherwise -> []
+        _ -> []
 
 
 -- Turn a SimpleCommand foo -avz --bar=baz into args "a", "v", "z", "bar",
@@ -110,10 +112,24 @@ getFlagsUntil stopCondition (T_SimpleCommand _ _ (_:args)) =
 getFlagsUntil _ _ = error "Internal shellcheck error, please report! (getFlags on non-command)"
 
 -- Get all flags in a GNU way, up until --
+getAllFlags :: Token -> [(Token, String)]
 getAllFlags = getFlagsUntil (== "--")
--- Get all flags in a BSD way, up until first non-flag argument
-getLeadingFlags = getFlagsUntil (not . ("-" `isPrefixOf`))
+-- Get all flags in a BSD way, up until first non-flag argument or --
+getLeadingFlags = getFlagsUntil (\x -> x == "--" || (not $ "-" `isPrefixOf` x))
 
+-- Check if a command has a flag.
+hasFlag cmd str = str `elem` (map snd $ getAllFlags cmd)
+
+-- Is this token a word that starts with a dash?
+isFlag token =
+    case getWordParts token of
+        T_Literal _ ('-':_) : _ -> True
+        _ -> False
+
+-- Is this token a flag where the - is unquoted?
+isUnquotedFlag token = fromMaybe False $ do
+    str <- getLeadingUnquotedString token
+    return $ "-" `isPrefixOf` str
 
 -- Given a T_DollarBraced, return a simplified version of the string contents.
 bracedString (T_DollarBraced _ l) = concat $ oversimplify l
@@ -139,9 +155,9 @@ mayBecomeMultipleArgs t = willBecomeMultipleArgs t || f t
 -- Is it certain that this word will becomes multiple words?
 willBecomeMultipleArgs t = willConcatInAssignment t || f t
   where
-    f (T_Extglob {}) = True
-    f (T_Glob {}) = True
-    f (T_BraceExpansion {}) = True
+    f T_Extglob {} = True
+    f T_Glob {} = True
+    f T_BraceExpansion {} = True
     f (T_DoubleQuoted _ parts) = any f parts
     f (T_NormalWord _ parts) = any f parts
     f _ = False
@@ -149,7 +165,7 @@ willBecomeMultipleArgs t = willConcatInAssignment t || f t
 -- This does token cause implicit concatenation in assignments?
 willConcatInAssignment token =
     case token of
-        t@(T_DollarBraced {}) -> isArrayExpansion t
+        t@T_DollarBraced {} -> isArrayExpansion t
         (T_DoubleQuoted _ parts) -> any willConcatInAssignment parts
         (T_NormalWord _ parts) -> any willConcatInAssignment parts
         _ -> False
@@ -164,11 +180,32 @@ onlyLiteralString = fromJust . getLiteralStringExt (const $ return "")
 
 -- Maybe get a literal string, but only if it's an unquoted argument.
 getUnquotedLiteral (T_NormalWord _ list) =
-    liftM concat $ mapM str list
+    concat <$> mapM str list
   where
     str (T_Literal _ s) = return s
     str _ = Nothing
 getUnquotedLiteral _ = Nothing
+
+-- Get the last unquoted T_Literal in a word like "${var}foo"THIS
+-- or nothing if the word does not end in an unquoted literal.
+getTrailingUnquotedLiteral :: Token -> Maybe Token
+getTrailingUnquotedLiteral t =
+    case t of
+        (T_NormalWord _ list@(_:_)) ->
+            from (last list)
+        _ -> Nothing
+  where
+    from t =
+        case t of
+            T_Literal {} -> return t
+            _ -> Nothing
+
+-- Get the leading, unquoted, literal string of a token (if any).
+getLeadingUnquotedString :: Token -> Maybe String
+getLeadingUnquotedString t =
+    case t of
+        T_NormalWord _ ((T_Literal _ s) : _) -> return s
+        _ -> Nothing
 
 -- Maybe get the literal string of this token and any globs in it.
 getGlobOrLiteralString = getLiteralStringExt f
@@ -181,13 +218,14 @@ getGlobOrLiteralString = getLiteralStringExt f
 getLiteralStringExt :: (Token -> Maybe String) -> Token -> Maybe String
 getLiteralStringExt more = g
   where
-    allInList = liftM concat . mapM g
+    allInList = fmap concat . mapM g
     g (T_DoubleQuoted _ l) = allInList l
     g (T_DollarDoubleQuoted _ l) = allInList l
     g (T_NormalWord _ l) = allInList l
     g (TA_Expansion _ l) = allInList l
     g (T_SingleQuoted _ s) = return s
     g (T_Literal _ s) = return s
+    g (T_ParamSubSpecialChar _ s) = return s
     g x = more x
 
 -- Is this token a string literal?
@@ -217,12 +255,19 @@ getCommand t =
         T_Redirecting _ _ w -> getCommand w
         T_SimpleCommand _ _ (w:_) -> return t
         T_Annotation _ _ t -> getCommand t
-        otherwise -> Nothing
+        _ -> Nothing
 
 -- Maybe get the command name of a token representing a command
 getCommandName t = do
-    (T_SimpleCommand _ _ (w:_)) <- getCommand t
-    getLiteralString w
+    (T_SimpleCommand _ _ (w:rest)) <- getCommand t
+    s <- getLiteralString w
+    if "busybox" `isSuffixOf` s
+        then
+            case rest of
+                (applet:_) -> getLiteralString applet
+                _ -> return s
+        else
+            return s
 
 -- If a command substitution is a single command, get its name.
 --  $(date +%s) = Just "date"
@@ -232,13 +277,13 @@ getCommandNameFromExpansion t =
         T_DollarExpansion _ [c] -> extract c
         T_Backticked _ [c] -> extract c
         T_DollarBraceCommandExpansion _ [c] -> extract c
-        otherwise -> Nothing
+        _ -> Nothing
   where
     extract (T_Pipeline _ _ [cmd]) = getCommandName cmd
     extract _ = Nothing
 
 -- Get the basename of a token representing a command
-getCommandBasename = liftM basename . getCommandName
+getCommandBasename = fmap basename . getCommandName
   where
     basename = reverse . takeWhile (/= '/') . reverse
 
@@ -248,7 +293,7 @@ isAssignment t =
         T_SimpleCommand _ (w:_) [] -> True
         T_Assignment {} -> True
         T_Annotation _ _ w -> isAssignment w
-        otherwise -> False
+        _ -> False
 
 isOnlyRedirection t =
     case t of
@@ -256,12 +301,15 @@ isOnlyRedirection t =
         T_Annotation _ _ w -> isOnlyRedirection w
         T_Redirecting _ (_:_) c -> isOnlyRedirection c
         T_SimpleCommand _ [] [] -> True
-        otherwise -> False
+        _ -> False
 
 isFunction t = case t of T_Function {} -> True; _ -> False
 
+isBraceExpansion t = case t of T_BraceExpansion {} -> True; _ -> False
+
 -- Get the lists of commands from tokens that contain them, such as
 -- the body of while loops or branches of if statements.
+getCommandSequences :: Token -> [[Token]]
 getCommandSequences t =
     case t of
         T_Script _ _ cmds -> [cmds]
@@ -272,16 +320,18 @@ getCommandSequences t =
         T_ForIn _ _ _ cmds -> [cmds]
         T_ForArithmetic _ _ _ _ cmds -> [cmds]
         T_IfExpression _ thens elses -> map snd thens ++ [elses]
-        otherwise -> []
+        T_Annotation _ _ t -> getCommandSequences t
+        _ -> []
 
 -- Get a list of names of associative arrays
 getAssociativeArrays t =
     nub . execWriter $ doAnalysis f t
   where
     f :: Token -> Writer [String] ()
-    f t@(T_SimpleCommand {}) = fromMaybe (return ()) $ do
+    f t@T_SimpleCommand {} = fromMaybe (return ()) $ do
         name <- getCommandName t
-        guard $ name == "declare"
+        let assocNames = ["declare","local","typeset"]
+        guard $ elem name assocNames
         let flags = getAllFlags t
         guard $ elem "A" $ map snd flags
         let args = map fst . filter ((==) "" . snd) $ flags
@@ -292,4 +342,96 @@ getAssociativeArrays t =
     nameAssignments t =
         case t of
             T_Assignment _ _ name _ _ -> return name
-            otherwise -> Nothing
+            _ -> Nothing
+
+-- A Pseudoglob is a wildcard pattern used for checking if a match can succeed.
+-- For example, [[ $(cmd).jpg == [a-z] ]] will give the patterns *.jpg and ?, which
+-- can be proven never to match.
+data PseudoGlob = PGAny | PGMany | PGChar Char
+    deriving (Eq, Show)
+
+-- Turn a word into a PG pattern, replacing all unknown/runtime values with
+-- PGMany.
+wordToPseudoGlob :: Token -> Maybe [PseudoGlob]
+wordToPseudoGlob word =
+    simplifyPseudoGlob . concat <$> mapM f (getWordParts word)
+  where
+    f x = case x of
+        T_Literal _ s -> return $ map PGChar s
+        T_SingleQuoted _ s -> return $ map PGChar s
+
+        T_DollarBraced {} -> return [PGMany]
+        T_DollarExpansion {} -> return [PGMany]
+        T_Backticked {} -> return [PGMany]
+
+        T_Glob _ "?" -> return [PGAny]
+        T_Glob _ ('[':_)  -> return [PGAny]
+        T_Glob {} -> return [PGMany]
+
+        T_Extglob {} -> return [PGMany]
+
+        _ -> return [PGMany]
+
+-- Turn a word into a PG pattern, but only if we can preserve
+-- exact semantics.
+wordToExactPseudoGlob :: Token -> Maybe [PseudoGlob]
+wordToExactPseudoGlob word =
+    simplifyPseudoGlob . concat <$> mapM f (getWordParts word)
+  where
+    f x = case x of
+        T_Literal _ s -> return $ map PGChar s
+        T_SingleQuoted _ s -> return $ map PGChar s
+        T_Glob _ "?" -> return [PGAny]
+        T_Glob _ "*" -> return [PGMany]
+        _ -> fail "Unknown token type"
+
+-- Reorder a PseudoGlob for more efficient matching, e.g.
+-- f?*?**g -> f??*g
+simplifyPseudoGlob :: [PseudoGlob] -> [PseudoGlob]
+simplifyPseudoGlob = f
+  where
+    f [] = []
+    f (x@(PGChar _) : rest ) = x : f rest
+    f list =
+        let (anys, rest) = span (\x -> x == PGMany || x == PGAny) list in
+            order anys ++ f rest
+
+    order s = let (any, many) = partition (== PGAny) s in
+        any ++ take 1 many
+
+-- Check whether the two patterns can ever overlap.
+pseudoGlobsCanOverlap :: [PseudoGlob] -> [PseudoGlob] -> Bool
+pseudoGlobsCanOverlap = matchable
+  where
+    matchable x@(xf:xs) y@(yf:ys) =
+        case (xf, yf) of
+            (PGMany, _) -> matchable x ys || matchable xs y
+            (_, PGMany) -> matchable x ys || matchable xs y
+            (PGAny, _) -> matchable xs ys
+            (_, PGAny) -> matchable xs ys
+            (_, _) -> xf == yf && matchable xs ys
+
+    matchable [] [] = True
+    matchable (PGMany : rest) [] = matchable rest []
+    matchable (_:_) [] = False
+    matchable [] r = matchable r []
+
+-- Check whether the first pattern always overlaps the second.
+pseudoGlobIsSuperSetof :: [PseudoGlob] -> [PseudoGlob] -> Bool
+pseudoGlobIsSuperSetof = matchable
+  where
+    matchable x@(xf:xs) y@(yf:ys) =
+        case (xf, yf) of
+            (PGMany, PGMany) -> matchable x ys
+            (PGMany, _) -> matchable x ys || matchable xs y
+            (_, PGMany) -> False
+            (PGAny, _) -> matchable xs ys
+            (_, PGAny) -> False
+            (_, _) -> xf == yf && matchable xs ys
+
+    matchable [] [] = True
+    matchable (PGMany : rest) [] = matchable rest []
+    matchable _ _ = False
+
+wordsCanBeEqual x y = fromMaybe True $
+    liftM2 pseudoGlobsCanOverlap (wordToPseudoGlob x) (wordToPseudoGlob y)

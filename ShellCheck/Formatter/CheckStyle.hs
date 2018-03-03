@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.Formatter.CheckStyle (format) where
 
@@ -34,14 +34,27 @@ format = return Formatter {
         putStrLn "<checkstyle version='4.3'>",
 
     onFailure = outputError,
-    onResult = outputResult,
+    onResult = outputResults,
 
     footer = putStrLn "</checkstyle>"
 }
 
-outputResult result contents = do
-    let comments = makeNonVirtual (crComments result) contents
-    putStrLn . formatFile (crFilename result) $ comments
+outputResults cr sys =
+    if null comments
+    then outputFile (crFilename cr) "" []
+    else mapM_ outputGroup fileGroups
+  where
+    comments = crComments cr
+    fileGroups = groupWith sourceFile comments
+    outputGroup group = do
+        let filename = sourceFile (head group)
+        result <- (siReadFile sys) filename
+        let contents = either (const "") id result
+        outputFile filename contents group
+
+outputFile filename contents warnings = do
+    let comments = makeNonVirtual warnings contents
+    putStrLn . formatFile filename $ comments
 
 formatFile name comments = concat [
     "<file ", attr "name" name, ">\n",

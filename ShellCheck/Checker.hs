@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 {-# LANGUAGE TemplateHaskell #-}
 module ShellCheck.Checker (checkScript, ShellCheck.Checker.runTests) where
@@ -54,7 +54,8 @@ checkScript sys spec = do
     checkScript contents = do
         result <- parseScript sys ParseSpec {
             psFilename = csFilename spec,
-            psScript = contents
+            psScript = contents,
+            psCheckSourced = csCheckSourced spec
         }
         let parseMessages = prComments result
         let analysisMessages =
@@ -77,6 +78,7 @@ checkScript sys spec = do
         AnalysisSpec {
             asScript = root,
             asShellType = csShellTypeOverride spec,
+            asCheckSourced = csCheckSourced spec,
             asExecutionMode = Executed
          }
 
@@ -88,13 +90,21 @@ getErrors sys spec =
 
 check = checkWithIncludes []
 
+checkWithSpec includes =
+    getErrors (mockedSystemInterface includes)
+
 checkWithIncludes includes src =
-    getErrors
-        (mockedSystemInterface includes)
-        emptyCheckSpec {
-            csScript = src,
-            csExcludedWarnings = [2148]
-        }
+    checkWithSpec includes emptyCheckSpec {
+        csScript = src,
+        csExcludedWarnings = [2148]
+    }
+
+checkRecursive includes src =
+    checkWithSpec includes emptyCheckSpec {
+        csScript = src,
+        csExcludedWarnings = [2148],
+        csCheckSourced = True
+    }
 
 prop_findsParseIssue = check "echo \"$12\"" == [1037]
 
@@ -153,10 +163,36 @@ prop_cantSourceDynamic2 =
 prop_canSourceDynamicWhenRedirected =
     null $ checkWithIncludes [("lib", "")] "#shellcheck source=lib\n. \"$1\""
 
+prop_recursiveAnalysis =
+    [2086] == checkRecursive [("lib", "echo $1")] "source lib"
+
+prop_recursiveParsing =
+    [1037] == checkRecursive [("lib", "echo \"$10\"")] "source lib"
+
 prop_sourceDirectiveDoesntFollowFile =
     null $ checkWithIncludes
                 [("foo", "source bar"), ("bar", "baz=3")]
                 "#shellcheck source=foo\n. \"$1\"; echo \"$baz\""
+
+prop_filewideAnnotationBase = [2086] == check "#!/bin/sh\necho $1"
+prop_filewideAnnotation1 = null $
+    check "#!/bin/sh\n# shellcheck disable=2086\necho $1"
+prop_filewideAnnotation2 = null $
+    check "#!/bin/sh\n# shellcheck disable=2086\ntrue\necho $1"
+prop_filewideAnnotation3 = null $
+    check "#!/bin/sh\n#unerlated\n# shellcheck disable=2086\ntrue\necho $1"
+prop_filewideAnnotation4 = null $
+    check "#!/bin/sh\n# shellcheck disable=2086\n#unrelated\ntrue\necho $1"
+prop_filewideAnnotation5 = null $
+    check "#!/bin/sh\n\n\n\n#shellcheck disable=2086\ntrue\necho $1"
+prop_filewideAnnotation6 = null $
+    check "#shellcheck shell=sh\n#unrelated\n#shellcheck disable=2086\ntrue\necho $1"
+prop_filewideAnnotation7 = null $
+    check "#!/bin/sh\n# shellcheck disable=2086\n#unrelated\ntrue\necho $1"
+
+prop_filewideAnnotationBase2 = [2086, 2181] == check "true\n[ $? == 0 ] && echo $1"
+prop_filewideAnnotation8 = null $
+    check "# Disable $? warning\n#shellcheck disable=SC2181\n# Disable quoting warning\n#shellcheck disable=2086\ntrue\n[ $? == 0 ] && echo $1"
 
 return []
 runTests = $quickCheckAll

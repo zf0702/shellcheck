@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.Formatter.GCC (format) where
 
@@ -31,14 +31,25 @@ format = return Formatter {
     header = return (),
     footer = return (),
     onFailure = outputError,
-    onResult = outputResult
+    onResult = outputAll
 }
 
 outputError file error = hPutStrLn stderr $ file ++ ": " ++ error
 
-outputResult result contents = do
-    let comments = makeNonVirtual (crComments result) contents
-    mapM_ (putStrLn . formatComment (crFilename result)) comments
+outputAll cr sys = mapM_ f groups
+  where
+    comments = crComments cr
+    groups = groupWith sourceFile comments
+    f :: [PositionedComment] -> IO ()
+    f group = do
+        let filename = sourceFile (head group)
+        result <- (siReadFile sys) filename
+        let contents = either (const "") id result
+        outputResult filename contents group
+
+outputResult filename contents warnings = do
+    let comments = makeNonVirtual warnings contents
+    mapM_ (putStrLn . formatComment filename) comments
 
 formatComment filename c = concat [
     filename, ":",

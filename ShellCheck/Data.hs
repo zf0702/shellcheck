@@ -33,6 +33,9 @@ internalVariables = [
     -- Other
     "USER", "TZ", "TERM", "LOGNAME", "LD_LIBRARY_PATH", "LANGUAGE", "DISPLAY",
     "HOSTNAME", "KRB5CCNAME", "XAUTHORITY"
+
+    -- Ksh
+    , ".sh.version"
   ]
 
 variablesWithoutSpaces = [
@@ -74,6 +77,14 @@ commonCommands = [
     "zcat"
   ]
 
+nonReadingCommands = [
+    "alias", "basename", "bg", "cal", "cd", "chgrp", "chmod", "chown",
+    "cp", "du", "echo", "export", "false", "fg", "fuser", "getconf",
+    "getopt", "getopts", "ipcrm", "ipcs", "jobs", "kill", "ln", "ls",
+    "locale", "mv", "nice", "printf", "ps", "pwd", "renice", "rm", "rmdir",
+    "set", "sleep", "touch", "trap", "true", "ulimit", "unalias", "uname"
+    ]
+
 sampleWords = [
     "alpha", "bravo", "charlie", "delta", "echo", "foxtrot",
     "golf", "hotel", "india", "juliett", "kilo", "lima", "mike",
@@ -82,12 +93,24 @@ sampleWords = [
     "zulu"
   ]
 
+binaryTestOps = [
+    "-nt", "-ot", "-ef", "==", "!=", "<=", ">=", "-eq", "-ne", "-lt", "-le",
+    "-gt", "-ge", "=~", ">", "<", "=", "\\<", "\\>", "\\<=", "\\>="
+  ]
+
+unaryTestOps = [
+    "!", "-a", "-b", "-c", "-d", "-e", "-f", "-g", "-h", "-L", "-k", "-p",
+    "-r", "-s", "-S", "-t", "-u", "-w", "-x", "-O", "-G", "-N", "-z", "-n",
+    "-o", "-v", "-R"
+  ]
+
 shellForExecutable :: String -> Maybe Shell
 shellForExecutable name =
     case name of
         "sh"    -> return Sh
         "bash"  -> return Bash
         "dash"  -> return Dash
+        "ash"   -> return Dash -- There's also a warning for this.
         "ksh"   -> return Ksh
         "ksh88" -> return Ksh
         "ksh93" -> return Ksh

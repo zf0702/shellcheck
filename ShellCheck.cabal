@@ -1,12 +1,12 @@
 Name:             ShellCheck
-Version:          0.4.5
+Version:          0.4.7
 Synopsis:         Shell script analysis tool
 License:          GPL-3
 License-file:     LICENSE
 Category:         Static Analysis
 Author:           Vidar Holen
 Maintainer:       vidar@vidarholen.net
-Homepage:         http://www.shellcheck.net/
+Homepage:         https://www.shellcheck.net/
 Build-Type:       Custom
 Cabal-Version:    >= 1.8
 Bug-reports:      https://github.com/koalaman/shellcheck/issues
@@ -55,6 +55,7 @@ library
       ShellCheck.AnalyzerLib
       ShellCheck.Checker
       ShellCheck.Checks.Commands
+      ShellCheck.Checks.ShellSupport
       ShellCheck.Data
       ShellCheck.Formatter.Format
       ShellCheck.Formatter.CheckStyle
@@ -69,7 +70,6 @@ library
 
 executable shellcheck
     build-depends:
-      ShellCheck,
       base >= 4 && < 5,
       containers,
       directory,
@@ -83,7 +83,6 @@ executable shellcheck
 test-suite test-shellcheck
     type: exitcode-stdio-1.0
     build-depends:
-      ShellCheck,
       base >= 4 && < 5,
       containers,
       directory,

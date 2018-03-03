@@ -32,6 +32,12 @@ not warn at all, as `ksh` supports decimals in arithmetic contexts.
 
 # OPTIONS
 
+**-a**,\ **--check-sourced**
+
+:   Emit warnings in sourced files. Normally, `shellcheck` will only warn
+    about issues in the specified files. With this option, any issues in
+    sourced files files will also be reported.
+
 **-C**[*WHEN*],\ **--color**[=*WHEN*]
 
 :   For TTY output, enable colors *always*, *never* or *auto*. The default
@@ -66,6 +72,7 @@ not warn at all, as `ksh` supports decimals in arithmetic contexts.
     By default, `shellcheck` will only follow files specified on the command
     line (plus `/dev/null`). This option allows following any file the script
     may `source`.
+
 
 # FORMATS
 
@@ -157,6 +164,11 @@ Valid keys are:
     used to tell shellcheck where to look for a file whose name is determined
     at runtime, or to skip a source by telling it to use `/dev/null`.
 
+**shell**
+:   Overrides the shell detected from the shebang.  This is useful for
+    files meant to be included (and thus lacking a shebang), or possibly
+    as a more targeted alternative to 'disable=2039'.
+
 # ENVIRONMENT VARIABLES
 The environment variable `SHELLCHECK_OPTS` can be set with default flags:
 
@@ -175,6 +187,15 @@ ShellCheck uses the follow exit codes:
 + 3: ShellCheck was invoked with bad syntax (e.g. unknown flag).
 + 4: ShellCheck was invoked with bad options (e.g. unknown formatter).
 
+# LOCALE
+This version of ShellCheck is only available in English. All files are
+leniently decoded as UTF-8, with a fallback of ISO-8859-1 for invalid
+sequences. `LC_CTYPE` is respected for output, and defaults to UTF-8 for
+locales where encoding is unspecified (such as the `C` locale).
+
+Windows users seeing `commitBuffer: invalid argument (invalid character)`
+should set their terminal to use UTF-8 with `chcp 65001`.
+
 # AUTHOR
 ShellCheck is written and maintained by Vidar Holen.
 
@@ -186,7 +207,7 @@ https://github.com/koalaman/shellcheck/issues
 # COPYRIGHT
 Copyright 2012-2015, Vidar Holen.
 Licensed under the GNU General Public License version 3 or later,
-see http://gnu.org/licenses/gpl.html
+see https://gnu.org/licenses/gpl.html
 
 
 # SEE ALSO

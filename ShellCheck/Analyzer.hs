@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.Analyzer (analyzeScript) where
 
@@ -23,14 +23,23 @@ import ShellCheck.Analytics
 import ShellCheck.AnalyzerLib
 import ShellCheck.Interface
 import Data.List
+import Data.Monoid
 import qualified ShellCheck.Checks.Commands
+import qualified ShellCheck.Checks.ShellSupport
 
 
 -- TODO: Clean up the cruft this is layered on
 analyzeScript :: AnalysisSpec -> AnalysisResult
 analyzeScript spec = AnalysisResult {
     arComments =
-        filterByAnnotation (asScript spec) . nub $
+        filterByAnnotation spec params . nub $
             runAnalytics spec
-            ++ ShellCheck.Checks.Commands.runChecks spec
+            ++ runChecker params (checkers params)
 }
+  where
+    params = makeParameters spec
+
+checkers params = mconcat $ map ($ params) [
+    ShellCheck.Checks.Commands.checker,
+    ShellCheck.Checks.ShellSupport.checker
+    ]

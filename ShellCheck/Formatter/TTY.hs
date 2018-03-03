@@ -2,7 +2,7 @@
     Copyright 2012-2015 Vidar Holen
 
     This file is part of ShellCheck.
-    http://www.vidarholen.net/contents/shellcheck
+    https://www.shellcheck.net
 
     ShellCheck is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 module ShellCheck.Formatter.TTY (format) where
 
@@ -43,15 +43,22 @@ colorForLevel level =
         "style"   -> 32 -- green
         "message" -> 1 -- bold
         "source"  -> 0 -- none
-        otherwise -> 0 -- none
+        _ -> 0         -- none
 
 outputError options file error = do
     color <- getColorFunc $ foColorOption options
     hPutStrLn stderr $ color "error" $ file ++ ": " ++ error
 
-outputResult options result contents = do
+outputResult options result sys = do
     color <- getColorFunc $ foColorOption options
     let comments = crComments result
+    let fileGroups = groupWith sourceFile comments
+    mapM_ (outputForFile color sys) fileGroups
+
+outputForFile color sys comments = do
+    let fileName = sourceFile (head comments)
+    result <- (siReadFile sys) fileName
+    let contents = either (const "") id result
     let fileLines = lines contents
     let lineCount = fromIntegral $ length fileLines
     let groups = groupWith lineNo comments
@@ -62,7 +69,7 @@ outputResult options result contents = do
                         else fileLines !! fromIntegral (lineNum - 1)
         putStrLn ""
         putStrLn $ color "message" $
-           "In " ++ crFilename result ++" line " ++ show lineNum ++ ":"
+           "In " ++ fileName ++" line " ++ show lineNum ++ ":"
         putStrLn (color "source" line)
         mapM_ (\c -> putStrLn (color (severityText c) $ cuteIndent c)) x
         putStrLn ""
