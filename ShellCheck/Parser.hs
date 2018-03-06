@@ -301,11 +301,14 @@ pushContext c = do
 parseProblemAtWithEnd start end level code msg = do
     irrelevant <- shouldIgnoreCode code
     unless irrelevant $
-        Ms.modify (\state -> state {
-            parseProblems = note:parseProblems state
-        })
+        addParseProblem note
   where
     note = ParseNote start end level code msg
+
+addParseProblem note =
+    Ms.modify (\state -> state {
+        parseProblems = note:parseProblems state
+    })
 
 parseProblemAt pos = parseProblemAtWithEnd pos pos
 
@@ -1146,6 +1149,7 @@ readBackTicked quoted = called "backtick expansion" $ do
          parseProblemAt pos ErrorC 1077
             "For command expansion, the tick should slant left (` vs ´). Use $(..) instead."
 
+-- Run a parser on a new input, such as for `..` or here documents.
 subParse pos parser input = do
     lastPosition <- getPosition
     lastInput <- getInput
@@ -1590,7 +1594,7 @@ readDollarLonely = do
 prop_readHereDoc = isOk readScript "cat << foo\nlol\ncow\nfoo"
 prop_readHereDoc2 = isWarning readScript "cat <<- EOF\n  cow\n  EOF"
 prop_readHereDoc3 = isOk readScript "cat << foo\n$\"\nfoo"
-prop_readHereDoc4 = isOk readScript "cat << foo\n`\nfoo"
+prop_readHereDoc4 = isNotOk readScript "cat << foo\n`\nfoo"
 prop_readHereDoc5 = isOk readScript "cat <<- !foo\nbar\n!foo"
 prop_readHereDoc6 = isOk readScript "cat << foo\\ bar\ncow\nfoo bar"
 prop_readHereDoc7 = isOk readScript "cat << foo\n\\$(f ())\nfoo"
@@ -1660,7 +1664,6 @@ readPendingHereDocs = do
                     c | c `elem` ";&" ->
                         ppt 1121 "Add ;/& terminators (and other syntax) on the line with the <<, not here."
                     _ -> ppt 1122 "Nothing allowed after end token. To continue a command, put it on the line with the <<."
-            parsedData <- parseHereData quoted pos hereData
             list <- parseHereData quoted pos hereData
             addToHereDocMap id list
 
@@ -1678,7 +1681,7 @@ readPendingHereDocs = do
     parseHereData Unquoted startPos hereData =
         subParse startPos readHereData hereData
 
-    readHereData = many $ try doubleQuotedPart <|> readHereLiteral
+    readHereData = many $ doubleQuotedPart <|> readHereLiteral
 
     readHereLiteral = do
         id <- getNextId
@@ -2826,11 +2829,31 @@ readScriptFile = do
 
 readScript = readScriptFile
 
--- Interactively run a parser in ghci:
--- debugParse readScript "echo 'hello world'"
+-- Interactively run a specific parser in ghci:
+-- debugParse readSimpleCommand "echo 'hello world'"
 debugParse p string = runIdentity $ do
     (res, _) <- runParser testEnvironment p "-" string
     return res
+
+-- Interactively run the complete parser in ghci:
+-- debugParseScript "#!/bin/bash\necho 'Hello World'\n"
+debugParseScript string =
+    result {
+        -- Remove the noisiest parts
+        prTokenPositions = Map.fromList [
+            (Id 0, Position {
+                posFile = "removed for clarity",
+                posLine = -1,
+                posColumn = -1
+            })]
+    }
+  where
+    result = runIdentity $
+        parseScript (mockedSystemInterface []) $ ParseSpec {
+            psFilename = "debug",
+            psScript = string,
+            psCheckSourced = False
+        }
 
 testEnvironment =
     Environment {
@@ -2923,10 +2946,11 @@ parseShell env name contents = do
                 prTokenPositions = Map.empty,
                 prRoot = Nothing
             }
+
+notesForContext list = zipWith ($) [first, second] $ filter isName list
   where
     isName (ContextName _ _) = True
     isName _ = False
-    notesForContext list = zipWith ($) [first, second] $ filter isName list
     first (ContextName pos str) = ParseNote pos pos ErrorC 1073 $
         "Couldn't parse this " ++ str ++ ". Fix to allow more checks."
     second (ContextName pos str) = ParseNote pos pos InfoC 1009 $
@@ -3000,6 +3024,36 @@ parseScript sys spec =
         checkSourced = psCheckSourced spec
     }
 
+-- Same as 'try' but emit syntax errors if the parse fails.
+tryWithErrors :: Monad m => SCParser m v -> SCParser m v
+tryWithErrors parser = do
+    userstate <- getState
+    oldContext <- getCurrentContexts
+    input <- getInput
+    pos <- getPosition
+    result <- lift $ runParserT (setPosition pos >> getResult parser) userstate (sourceName pos) input
+    case result of
+        Right (result, endPos, endInput, endState) -> do
+            -- 'many' objects if we don't consume anything at all, so read a dummy value
+            void anyChar <|> eof
+            putState endState
+            setPosition endPos
+            setInput endInput
+            return result
+
+        Left err -> do
+            newContext <- getCurrentContexts
+            addParseProblem $ makeErrorFor err
+            mapM_ addParseProblem $ notesForContext newContext
+            setCurrentContexts oldContext
+            fail ""
+  where
+    getResult p = do
+        result <- p
+        endPos <- getPosition
+        endInput <- getInput
+        endState <- getState
+        return (result, endPos, endInput, endState)
 
 return []
 runTests = $quickCheckAll
